@@ -1,7 +1,7 @@
 # DTG
 
 # VIDEO:
-[![IMAGE ALT TEXT HERE](https://github.com/jingGM/DTG/front.png)](https://youtu.be/1-YZwSma5Z4)
+[![IMAGE ALT TEXT HERE](https://github.com/jingGM/DTG/blob/main/front.png)](https://www.youtube.com/watch?v=1-YZwSma5Z4)
 
 # Pre-Print Paper
 [DTG : Diffusion-based Trajectory Generation for Mapless Global Navigation](https://arxiv.org/abs/2403.09900)
