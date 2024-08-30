@@ -1,6 +1,6 @@
 # DTG
 
-# VIDEO:
+# [VIDEO:](https://www.youtube.com/watch?v=1-YZwSma5Z4)
 [![IMAGE ALT TEXT HERE](https://github.com/jingGM/DTG/blob/main/front.png)](https://www.youtube.com/watch?v=1-YZwSma5Z4)
 
 # Pre-Print Paper
