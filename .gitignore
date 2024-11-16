@@ -1,0 +1,11 @@
+.idea/*
+*/.idea/*
+
+build/*
+*/build/*
+
+__pycache__/*
+
+loginfo/*
+loginfo
+

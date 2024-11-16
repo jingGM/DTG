@@ -15,17 +15,16 @@ from tqdm import tqdm
 import time
 
 from src.models.diff_hausdorf import HausdorffLoss
-from src.utils.configs import GeneratorType, DataDict, Hausdorff, LossNames, DiffusionTypes
+from src.utils.configs import GeneratorType, DataDict, Hausdorff, LossNames
 
 
 class Loss(nn.Module):
     def __init__(self, cfg):
         super(Loss, self).__init__()
 
-        with open(join(cfg.root, "data.pkl"), "rb") as input_file:
-            data = pickle.load(input_file)
-        self.all_positions = data[DataDict.all_positions]
-        self.network = data[DataDict.network]
+        # with open(join(cfg.root, "data.pkl"), "rb") as input_file:
+        #     data = pickle.load(input_file)
+        # self.network = data[DataDict.network]
 
         self.generator_type = cfg.generator_type
         self.use_traversability = cfg.use_traversability
@@ -35,7 +34,6 @@ class Loss(nn.Module):
         self.distance = HausdorffLoss(mode=cfg.distance_type)
 
         self.train_poses = cfg.train_poses
-        self.diffusion_type = cfg.diffusion_type
         self.distance_type = cfg.distance_type
         self.scale_waypoints = cfg.scale_waypoints
         self.last_ratio = cfg.last_ratio
@@ -61,7 +59,8 @@ class Loss(nn.Module):
         traversability = torch.clamp(d, 0.0001, self.collision_distance)
         values = traversability[torch.where(traversability < self.collision_distance)]
         if len(values) < 1:
-            return torch.tensor(0, device=traversability.device), torch.tensor(1, device=traversability.device)
+            return (torch.tensor(0, device=traversability.device, dtype=torch.float),
+                    torch.tensor(1, device=traversability.device, dtype=torch.float))
         else:
             torch.cuda.empty_cache()
             loss = torch.arctanh((self.collision_distance - values) / self.collision_distance)
@@ -69,9 +68,6 @@ class Loss(nn.Module):
 
     def _local_collision(self, yhat, local_map):
         assert len(yhat.shape) == 3, "the shape should be B,N,2"
-        # if len(yhat.shape) == 3:
-        #     B, N, C = yhat.shape
-        #     yhat = yhat.view(B, 1, N, C)
         By, N, C = yhat.shape
         Bl, W, H = local_map.shape
         assert Bl == By, "the batch shape {} and {} should be the same".format(By, Bl)
@@ -120,38 +116,27 @@ class Loss(nn.Module):
         return output
 
     def forward_diffusion(self, input_dict):
-        noise = input_dict[DataDict.noise]
         ygt = input_dict[DataDict.path]
         y_hat = input_dict[DataDict.prediction]
 
         output = {}
-        if self.diffusion_type == DiffusionTypes.noise:
-            all_loss = self.target_dis(y_hat, noise)
-            if self.use_traversability:
-                traversablility_hat = input_dict[DataDict.predict_path]
-                if self.train_poses:
-                    traversability_hat_poses = traversablility_hat * self.scale_waypoints
-                else:
-                    traversability_hat_poses = torch.cumsum(traversablility_hat, dim=1) * self.scale_waypoints
-        elif self.diffusion_type == DiffusionTypes.trajectory:
-            if self.train_poses:
-                y_hat_poses = y_hat * self.scale_waypoints
-            else:
-                y_hat_poses = torch.cumsum(y_hat, dim=1) * self.scale_waypoints
-            if self.use_traversability:
-                B, _, _ = y_hat.shape
-                traversability_hat_poses = y_hat_poses[int(B / 2):]
-                y_hat_poses = y_hat_poses[:int(B / 2)]
 
-            path_dis = self.distance(ygt, y_hat_poses).mean()
-            last_pose_dis = self.target_dis(ygt[:, -1, :], y_hat_poses[:, -1, :])
-            all_loss = self.distance_ratio * path_dis + self.last_ratio * last_pose_dis
-            output.update({
-                LossNames.last_dis: last_pose_dis,
-                LossNames.path_dis: path_dis,
-            })
+        if self.train_poses:
+            y_hat_poses = y_hat * self.scale_waypoints
         else:
-            raise Exception("the diffusion type is not defined")
+            y_hat_poses = torch.cumsum(y_hat, dim=1) * self.scale_waypoints
+        if self.use_traversability:
+            B, _, _ = y_hat.shape
+            traversability_hat_poses = y_hat_poses[int(B / 2):]
+            y_hat_poses = y_hat_poses[:int(B / 2)]
+
+        path_dis = self.distance(ygt, y_hat_poses).mean()
+        last_pose_dis = self.target_dis(ygt[:, -1, :], y_hat_poses[:, -1, :])
+        all_loss = self.distance_ratio * path_dis + self.last_ratio * last_pose_dis
+        output.update({
+            LossNames.last_dis: last_pose_dis,
+            LossNames.path_dis: path_dis,
+        })
 
         if self.use_traversability:
             local_map = input_dict[DataDict.local_map]
@@ -163,22 +148,11 @@ class Loss(nn.Module):
         output.update({LossNames.loss: all_loss})
         return output
 
-    def forward_estimation(self, input_dict):
-        gt = input_dict[DataDict.traversability_gt]
-        est_loss, est_dict = self.forward_traversability(loss=gt,
-                                                         mu=input_dict[DataDict.traversability_mu],
-                                                         var=input_dict[DataDict.traversability_var],
-                                                         val=input_dict[DataDict.traversability_pred])
-        est_dict.update({LossNames.loss: est_loss})
-        return est_dict
-
     def forward(self, input_dict):
         if self.generator_type == GeneratorType.cvae:
             return self.forward_cvae(input_dict=input_dict)
         elif self.generator_type == GeneratorType.diffusion:
             return self.forward_diffusion(input_dict=input_dict)
-        elif self.generator_type == GeneratorType.estimator:
-            return self.forward_estimation(input_dict=input_dict)
 
     def convert_path_pixel(self, trajectory):
         return np.clip(np.around(trajectory / self.map_resolution)[:, :2] + self.map_range, 0, np.inf)

@@ -4,7 +4,7 @@ from diffusers.schedulers.scheduling_ddpm import DDPMScheduler
 
 from src.models.backbones.rnn import RNNDiffusion
 from src.models.backbones.unet import ConditionalUnet1D
-from src.utils.configs import DiffusionTypes, DataDict, DiffusionModelType
+from src.utils.configs import DataDict, DiffusionModelType
 
 
 class Diffusion(nn.Module):
@@ -14,12 +14,8 @@ class Diffusion(nn.Module):
         self.diffusion_type = cfg.diffusion_type
         self.use_all_paths = cfg.use_all_paths
         self.sample_times = cfg.sample_times
-        if self.diffusion_type == DiffusionTypes.trajectory:
-            predict_type = "sample"
-        else:
-            predict_type = "epsilon"
         self.noise_scheduler = DDPMScheduler(beta_start=cfg.beta_start, beta_end=cfg.beta_end,
-                                             prediction_type=predict_type, num_train_timesteps=cfg.num_train_timesteps,
+                                             prediction_type="sample", num_train_timesteps=cfg.num_train_timesteps,
                                              clip_sample_range=cfg.clip_sample_range, clip_sample=cfg.clip_sample,
                                              beta_schedule=cfg.beta_schedule, variance_type=cfg.variance_type)
         self.time_steps = cfg.num_train_timesteps
@@ -68,14 +64,16 @@ class Diffusion(nn.Module):
         time_step = torch.randint(0, time_steps, (trajectory.shape[0],), device=trajectory.device).long()
         return time_step
 
-    def add_trajectory_step_noise(self, trajectory):
+    def add_trajectory_step_noise(self, trajectory, traversable_step=None):
         noise = self.add_trajectory_noise(trajectory=trajectory)
         time_step = self.add_time_step_noise(trajectory=trajectory)
         noisy_trajectory = self.noise_scheduler.add_noise(original_samples=trajectory, noise=noise, timesteps=time_step)
         if self.use_traversability:
             t_trajectories = trajectory.clone()
             t_noise = self.add_trajectory_noise(trajectory=t_trajectories)
-            t_time_step = self.add_time_step_noise(trajectory=t_trajectories, traversable_steps=self.traversable_steps)
+            if traversable_step is None:
+                traversable_step = self.traversable_steps
+            t_time_step = self.add_time_step_noise(trajectory=t_trajectories, traversable_steps=traversable_step)
             t_noisy_trajectory = self.noise_scheduler.add_noise(original_samples=t_trajectories, noise=t_noise,
                                                                 timesteps=t_time_step)
             noise = torch.concat((noise, t_noise))
@@ -83,34 +81,20 @@ class Diffusion(nn.Module):
             noisy_trajectory = torch.concat((noisy_trajectory, t_noisy_trajectory), dim=0)
         return noisy_trajectory, noise, time_step
 
-    def forward(self, observation, gt_path=None):
+    def forward(self, observation, gt_path=None, traversable_step=None):
         h = self.encoder(observation)  # B x 512
         h_condition = self.trajectory_condition(h)
-        # pre_trajectory = self.trajectory_generator(h, h_condition)
         output = {}
 
-        noisy_trajectory, noise, time_step = self.add_trajectory_step_noise(trajectory=gt_path)
-        if self.estimate_traversability:
-            output.update({DataDict.embedding: h_condition})
+        noisy_trajectory, noise, time_step = self.add_trajectory_step_noise(trajectory=gt_path, traversable_step=traversable_step)
         if self.use_traversability:
             h_condition = torch.concat((h_condition, h_condition), dim=0)
         pred = self.diff_model(noisy_trajectory, time_step, local_cond=None, global_cond=h_condition)
         output.update({
             DataDict.prediction: pred,
             DataDict.noise: noise,
+            DataDict.time_steps: time_step
         })
-
-        if self.use_traversability and self.diffusion_type == DiffusionTypes.noise:
-            B, _ = h_condition.shape
-            noisy_trajectory = self.noise_scheduler.add_noise(original_samples=gt_path, noise=pred[int(B/2):],
-                                                              timesteps=time_step[int(B/2):])
-            output.update({DataDict.predict_path: noisy_trajectory})
-        if self.estimate_traversability:
-            # trajectory, _ = self.get_trajectory(h_condition=h_condition, use_all=False)
-            if self.diffusion_type == DiffusionTypes.noise:
-                output.update({DataDict.trajetory: noisy_trajectory})
-            else:
-                output.update({DataDict.trajetory: pred[int(pred.shape[0]/2):]})
         return output
 
     @torch.no_grad()
@@ -122,7 +106,6 @@ class Diffusion(nn.Module):
         trajectory = torch.randn(size=(h_condition.shape[0], self.waypoints_num, self.waypoint_dim),
                                  dtype=h_condition.dtype, device=h_condition.device, generator=None)
         all_trajectories = []
-        # variances = []
         scheduler = self.noise_scheduler
         scheduler.set_timesteps(self.time_steps)
         for t in scheduler.timesteps:
@@ -132,17 +115,10 @@ class Diffusion(nn.Module):
             model_output = self.diff_model(trajectory, t.unsqueeze(0).repeat(B, ), local_cond=None,
                                            global_cond=h_condition)
             trajectory = scheduler.step(model_output, t, trajectory, generator=None).prev_sample.contiguous()
-            # variance = scheduler._get_variance(t=t)
-            # variances.append(variance.clone().detach().cpu().numpy())
             if self.use_all_paths:
                 all_trajectories.append(model_output.clone().detach().cpu().numpy())
-
-        # trajectory, all_trajectories = self.get_trajectory(h_condition=h_condition, use_all=use_all)
         output = {
             DataDict.prediction: trajectory,
             DataDict.all_trajectories: all_trajectories,
-            # DataDict.all_variances: variances
         }
-        if self.estimate_traversability:
-            output.update({DataDict.embedding: h_condition})
         return output

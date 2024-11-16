@@ -2,12 +2,13 @@ import argparse
 import os
 
 import torch
-from src.utils.configs import TrainingConfig, DiffusionTypes, GeneratorType, DiffusionModelType, CRNNType
+from src.utils.configs import TrainingConfig, GeneratorType, DiffusionModelType, CRNNType
 
 
 def get_args():
     parser = argparse.ArgumentParser(description='PyTorch ImageNet Training')
     parser.add_argument('--name', type=str, default="hnav", help="name of project")
+    parser.add_argument('--wandb_api', type=str, default="", help="Your wandb api")
     parser.add_argument('--only_load_model', action='store_true', default=False,
                         help='only load model to continue training')
     parser.add_argument('--snapshot', type=str, default="", help='snapshot')
@@ -17,13 +18,11 @@ def get_args():
     parser.add_argument('--debug_output', type=str, default=None, help='snapshot')
 
     # data args:
-    parser.add_argument('--data_root', type=str, help='root of the dataset',
-                        default="/home/jing/Documents/gn/database/datasets/regular_data")
-    parser.add_argument('--batch_size', type=int, default=4, help="the negative number in the same frame")
+    parser.add_argument('--data_root', type=str, help='root of the dataset', default="data_sample")
+    parser.add_argument('--batch_size', type=int, default=2, help="the negative number in the same frame")
     parser.add_argument('--workers', type=int, default=16, help="the worker number in the dataloader")
 
     # model args:
-    parser.add_argument('--diffuse_type', type=int, default=0, help="0: noise; 1: trajectory")
     parser.add_argument('--generator_type', type=int, default=0, help="0: diffusion; 1: cvae")
     parser.add_argument('--diffusion_model', type=int, default=0, help="0: rnn; 1: unet")
     parser.add_argument('--crnn_type', type=int, default=0, help="0: gru; 1: lstm")
@@ -67,13 +66,6 @@ def get_configuration():
     else:
         raise Exception("decoder type is not defined")
 
-    if args.diffuse_type == 0:
-        cfg.loss.diffusion_type = cfg.model.diffusion.diffusion_type = DiffusionTypes.noise
-    elif args.diffuse_type == 1:
-        cfg.loss.diffusion_type = cfg.model.diffusion.diffusion_type = DiffusionTypes.trajectory
-    else:
-        raise Exception("decoder type is not defined")
-
     if args.diffusion_model == 0:
         cfg.model.diffusion.model_type = DiffusionModelType.crnn
         if args.crnn_type == 0:
@@ -98,6 +90,7 @@ def get_configuration():
     #########################################
     cfg.only_model = args.only_load_model
     cfg.snapshot = args.snapshot
+    cfg.wandb_api = args.wandb_api
     cfg.evaluation_freq = args.evaluation_freq
     cfg.train_time_steps = args.train_time_steps
     cfg.loss.output_dir = args.debug_output

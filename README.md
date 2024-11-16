@@ -16,7 +16,13 @@ pip install torch_geometric pyg_lib torch_scatter torch_sparse torch_cluster tor
 pip install -r requirements.txt
 ```
 
+Download sample dataset in the root folder:
+https://drive.google.com/drive/folders/1YClCBSCUc3_Zy3WIQfAE6_kIQ0xTOe0I?usp=sharing
+
 # Run
+- generator_type: 0: diffusion model; 1: cvae
+- diffusion_model: 0: crnn; 1:unet
+- crnn_type: 0: gru; 1:lstm
 ```
-python main.py 
+python main.py --wandb_api=YOUR_WANDB_API --generator_type=0 --diffusion_model=0 --crnn_type=0
 ```

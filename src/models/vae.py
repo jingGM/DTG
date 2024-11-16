@@ -96,7 +96,7 @@ class CVAE(nn.Module):
                 DataDict.embedding: xh})
         return output
 
-    def forward(self, observation, gt_path=None):
+    def forward(self, observation, gt_path=None, traversable_step=None):
         mu, logvar, xh = self.encode(observation)
         z = self._reparameterize(mu, logvar)
         prediction = self.decode(xh, z)

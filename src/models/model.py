@@ -4,6 +4,7 @@ from torch import nn
 from src.models.perception import Perception, LidarImageModel
 from src.models.vae import CVAE
 from src.models.diffusion import Diffusion
+
 from src.utils.configs import DataDict, GeneratorType
 
 
@@ -33,7 +34,8 @@ class HNav(nn.Module):
 
             observation = self.perception(lidar=input_dict[DataDict.lidar], vel=input_dict[DataDict.vel],
                                           target=input_dict[DataDict.target])
-            generator_output = self.generator(observation=observation, gt_path=input_dict[DataDict.path])
+            generator_output = self.generator(observation=observation, gt_path=input_dict[DataDict.path],
+                                              traversable_step=input_dict[DataDict.traversable_step])
             output.update(generator_output)
             return output
 

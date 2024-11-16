@@ -37,6 +37,8 @@ class DataDict:
     traversability_gt = "traversability_gt"
 
     prediction = "prediction"
+    time_steps = "time_steps"
+    traversable_step = "traversable_step"
     predict_path = "predict_path"
     ground_truth = "ground_truth"
     embedding = "embedding"
@@ -107,11 +109,6 @@ class CRNNType:
     gru = "gru"
 
 
-class DiffusionTypes:
-    noise = "noise"
-    trajectory = "trajectory"
-
-
 Perception = edict()
 Perception.fix_perception = False
 Perception.vel_dim = 20
@@ -158,9 +155,9 @@ Diffusion.cond_predict_scale = True
 Diffusion.use_traversability = True
 Diffusion.estimate_traversability = True
 Diffusion.traversable_steps = 10
+Diffusion.traversable_steps_buffer = 5
 Diffusion.n_groups = 8
 Diffusion.model_type = DiffusionModelType.crnn
-Diffusion.diffusion_type = DiffusionTypes.noise
 Diffusion.use_all_paths = False
 Diffusion.sample_times = -1
 Diffusion.crnn = CRNN
@@ -207,7 +204,6 @@ LossConfig.last_ratio = 2.0
 LossConfig.vae_kld_ratio = 1.0
 LossConfig.traversability_ratio = 10.0
 LossConfig.generator_type = ModelConfig.generator_type
-LossConfig.diffusion_type = DiffusionTypes.noise
 LossConfig.traversability_estimation_reconstruct_ratio = 10.0
 LossConfig.root = "/home/jing/Documents/gn/database/datasets/regular_data"
 
@@ -237,6 +233,7 @@ class LogTypes:
 
 TrainingConfig = edict()
 TrainingConfig.name = ""
+TrainingConfig.wandb_api = ""
 TrainingConfig.only_model = False
 TrainingConfig.output_dir = "./results"
 TrainingConfig.snapshot = "./pretrained.pth.tar"
@@ -250,6 +247,7 @@ TrainingConfig.weight_decay = 0
 TrainingConfig.lr_t0 = 1
 TrainingConfig.lr_tm = 5
 TrainingConfig.lr_min = 1e-7
+TrainingConfig.traversability_threshold = 1e-7
 
 TrainingConfig.gpus = edict()
 TrainingConfig.gpus.channels_last = False

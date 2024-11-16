@@ -17,7 +17,7 @@ from tqdm import tqdm
 import os.path as osp
 from datetime import datetime, timedelta
 
-from src.utils.configs import TrainingConfig, ScheduleMethods, LossNames, LogNames, LogTypes
+from src.utils.configs import TrainingConfig, ScheduleMethods, LossNames, LogNames, LogTypes, DataDict, GeneratorType
 from src.loss import Loss
 from src.models.model import get_model
 from src.utils.functions import to_device, get_device, release_cuda
@@ -69,7 +69,6 @@ class Trainer:
 
         # set up loggers
         self.output_dir = cfgs.output_dir
-        # self.log_steps = cfgs.logger.log_steps
         configs = {
             "lr": cfgs.lr,
             "lr_t0": cfgs.lr_t0,
@@ -78,12 +77,11 @@ class Trainer:
             "gpus": cfgs.gpus,
             "epochs": self.max_epoch
         }
-        wandb.login(key="b03ed39d22a77f26ec109c0b8c02881f0b40a7d8")
+        wandb.login(key=cfgs.wandb_api)
         if self.distributed:
             self.wandb_run = wandb.init(project=self.name, config=configs, group="DDP")
         else:
             self.wandb_run = wandb.init(project=self.name, config=configs)
-        # self.output_file = join(self.output_dir, "output.txt")
 
         # loss, optimizer and scheduler
         self.optimizer = torch.optim.Adam(self.model.parameters(), lr=cfgs.lr, weight_decay=cfgs.weight_decay)
@@ -108,6 +106,12 @@ class Trainer:
         # datasets:
         self.training_data_loader = train_data_loader(cfg=cfgs.data)
         self.evaluation_data_loader = evaluation_data_loader(cfg=cfgs.data)
+
+        self.use_traversability = cfgs.loss.use_traversability
+        self.generator_type = cfgs.model.generator_type
+        self.time_step_loss_buffer = []
+        self.time_step_number = 0
+        self.traversability_threshold = cfgs.traversability_threshold
 
     def _set_model_gpus(self, cfg):
         # self.current_rank = 0  # global rank
@@ -308,6 +312,9 @@ class Trainer:
             for key, value in results.items():
                 self.wandb_run.log({log_name + "/" + key: value})
 
+    def update_traversable_time_step(self, traversability, time_step):
+        pass
+
     def run_epoch(self):
         """
         run training epochs
@@ -315,12 +322,10 @@ class Trainer:
         self.optimizer.zero_grad()
 
         last_time = time.time()
-        # with open(self.output_file, "a") as f:
-        #     print("Training CUDA {} Epoch {} \n".format(self.current_rank, self.epoch), file=f)
         for iteration, data_dict in enumerate(
                 tqdm(self.training_data_loader, desc="Training Epoch {}".format(self.epoch))):
             self.iteration += 1
-
+            data_dict[DataDict.traversable_step] = self.time_step_number
             for step_iteration in range(self.train_time_steps):
                 output_dict = self.step(data_dict=data_dict)
                 torch.cuda.empty_cache()
@@ -330,8 +335,10 @@ class Trainer:
                 optimize_time = time.time()
 
                 output_dict = release_cuda(output_dict)
-                self.update_log(results=output_dict, timestep=optimize_time-last_time, log_name=LogTypes.train)
+                self.update_log(results=output_dict, timestep=optimize_time - last_time, log_name=LogTypes.train)
                 last_time = time.time()
+                if self.generator_type == GeneratorType.diffusion and self.use_traversability:
+                    self.update_traversable_time_step(output_dict[LossNames.traversability], output_dict[DataDict.time_step])
         self.scheduler.step()
 
         if not self.distributed or (self.distributed and self.current_rank == 0):
@@ -340,11 +347,8 @@ class Trainer:
 
     def inference_epoch(self):
         if (self.evaluation_freq > 0) and (self.epoch % self.evaluation_freq == 0) and (self.epoch != 0):
-        # if (self.evaluation_freq > 0) and (self.epoch % self.evaluation_freq == 0):
             for iteration, data_dict in enumerate(tqdm(self.evaluation_data_loader,
                                                        desc="Evaluation Losses Epoch {}".format(self.epoch))):
-                # if iteration % self.max_evaluation_iteration_per_epoch == 0 and iteration != 0:
-                #     break
                 start_time = time.time()
                 output_dict = self.step(data_dict, train=False)
                 torch.cuda.synchronize()
