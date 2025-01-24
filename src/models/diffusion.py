@@ -11,7 +11,7 @@ class Diffusion(nn.Module):
     def __init__(self, cfg, activation_func=nn.Softsign):
         super(Diffusion, self).__init__()
         self.model_type = cfg.model_type
-        self.diffusion_type = cfg.diffusion_type
+        # self.diffusion_type = cfg.diffusion_type
         self.use_all_paths = cfg.use_all_paths
         self.sample_times = cfg.sample_times
         self.noise_scheduler = DDPMScheduler(beta_start=cfg.beta_start, beta_end=cfg.beta_end,
